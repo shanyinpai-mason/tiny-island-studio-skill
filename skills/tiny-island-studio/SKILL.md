@@ -1,6 +1,6 @@
 ---
 name: tiny-island-studio
-description: Manage file-backed, multi-series AI children's animation production with direct GPT Image 2 static-image generation, approved visual references, storyboards, Simplified-Chinese Jimeng video prompts, manual animation take intake, safety gates, dashboards, and git versioning. Use when the user asks to create or continue a children's animation series or episode, generate character sheets or storyboard images, says phrases such as 「繼續做動畫」「做 EP05」「開新系列」「設計角色」「核准角色」「改某一鏡」「產生分鏡」「生成定裝照」「生成分鏡圖」「進行安全審核」, or needs Tiny Island Studio production status and workflow management.
+description: Manage multi-series AI children's animation production with GPT Image 2 stills, approved references, Simplified-Chinese Jimeng prompts, manual video takes, safety gates, dashboards, and git. Use for creating or continuing a series or episode, character sheets, storyboards, 「繼續做動畫」「做 EP05」「開新系列」「設計角色」「核准角色」「改某一鏡」「生成分鏡圖」, safety review, or production status.
 ---
 
 # Tiny Island Studio
@@ -31,11 +31,13 @@ Never store series data inside the skill folder. Never mix style or cast data ac
 Read [references/new-series-guide.md](references/new-series-guide.md) before interviewing or creating files.
 
 1. Ask no more than three questions per turn.
-2. Create `series/<series-id>/series.json` and `style-bible.md`.
-3. Set `series.json.outputRoot` to `outputs/<series-id>`.
-4. Design 2–4 principal characters through the character workflow.
-5. Generate and approve the character stills and cast lineup through the built-in image workflow.
-6. Generate the dashboard, then commit with `series: 建立 <名稱> 系列`.
+2. Run `git rev-parse --is-inside-work-tree` in the confirmed workspace. If it is not a repository, initialize git there before creating production files.
+3. Ensure `.gitignore` contains `outputs/**` and `!outputs/.gitkeep`, then create `outputs/.gitkeep`.
+4. Create `series/<series-id>/series.json` and `style-bible.md`.
+5. Set `series.json.outputRoot` to `outputs/<series-id>` and `requireStoryboardStills` to `true` unless the user explicitly chooses a lighter storyboard workflow.
+6. Design 2–4 principal characters through the character workflow.
+7. Generate and approve the character stills and cast lineup through the built-in image workflow.
+8. Generate the dashboard, then commit with `series: 建立 <名稱> 系列`.
 
 ## Design and approve characters
 
@@ -60,7 +62,7 @@ Use these stages in order:
 |---|---|---|
 | `idea` | Fill `hook`, `learning`, and `emotion` in `episode.json` | All three are non-empty |
 | `script` | Generate or edit `story.md` | Non-empty logline, 6–8 beats, and narration |
-| `storyboard` | Generate `storyboard.json`, saved prompts, and all storyboard stills | Schema-valid 12–20 shots, 2–15 seconds each, 90–180 seconds total; prompts synchronized; every storyboard still generated and user-approved |
+| `storyboard` | Generate `storyboard.json`, saved prompts, and storyboard stills when required | Schema-valid 12–20 shots, 2–15 seconds each, 90–180 seconds total; prompts synchronized; when `requireStoryboardStills` is not `false`, every storyboard still is generated and user-approved |
 | `generate` | Let the user generate each animation take in Jimeng and ingest the files | Every shot has at least one `take-NN.mp4`; user confirms completion; set `generateConfirmed: true` |
 | `edit` | Present and record the edit checklist in `review.md` | Every edit checkbox is checked |
 | `review` | Present safety findings and record human decisions | Every review checkbox and every risk warning is confirmed |
@@ -75,23 +77,29 @@ node <skill-dir>/scripts/validate.mjs <episode-directory> --gate <target-stage>
 
 The validator maps the immediately following target to the current stage's completion rules. Passing the current stage name directly validates that stage. Change `stage` and update `stageUpdatedAt` only after exit code 0.
 
-When targeting `scheduled`, require a future `publishDate`. When targeting `published`, require that the scheduled date has arrived and remind the user to mark the upload Made for Kids.
+When targeting `scheduled`, require a `publishDate` of local today or later. When targeting `published`, require that the scheduled date has arrived and remind the user to mark the upload Made for Kids.
 
-## Generate story and storyboard
+## Generate the script
 
 Read the corresponding template in [references/prompts.md](references/prompts.md) and the applicable schema.
 
 1. Inject the complete style bible.
 2. Inject `name` and `視覺聖經` only for approved characters selected for the episode.
 3. Generate one JSON object without a Markdown fence.
-4. Validate before converting it to `story.md`, `storyboard.json`, and prompt files.
+4. Validate against `schemas/story.schema.json`, then write only `story.md`. Do not create `storyboard.json` or shot prompt files during the script stage.
 5. If validation fails, repair and retry at most twice. Report the blocker after the second failure.
-6. For new storyboards, write a Simplified-Chinese `jimengPrompt` for each shot. Keep English character anchors and required negative phrases verbatim. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
-7. Keep each shot's `jimengPrompt` or legacy `seedancePrompt` byte-for-byte equal to `prompts/shot-NN.txt` after trimming surrounding whitespace.
-8. Save one static-image prompt per shot under `image-prompts/storyboard/`, directly generate the storyboard stills, and save them under the matching `outputs/` path. Never paste static-image prompts into chat unless the user asks.
-9. Run the validator, then commit with `<EP>: script 完成`, `<EP>: storyboard 完成`, or `<EP>: 重新生成分鏡`.
+6. Run the validator, then commit with `<EP>: script 完成`.
 
-Do not ask for confirmation before regeneration: git is the recovery mechanism. Afterward, say that the previous version remains available in git.
+## Generate the storyboard
+
+1. Read the approved `story.md`, style bible, and approved character cards.
+2. Generate and validate one JSON object against `schemas/storyboard.schema.json`.
+3. Write a Simplified-Chinese `jimengPrompt` for each shot. Keep English character anchors and required negative phrases verbatim. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
+4. Keep each shot's `jimengPrompt` or legacy `seedancePrompt` byte-for-byte equal to `prompts/shot-NN.txt` after trimming surrounding whitespace.
+5. Save one static-image prompt per shot under `image-prompts/storyboard/`. When `series.json.requireStoryboardStills` is not `false`, directly generate the stills and save them under the matching `outputs/` path. Never paste static-image prompts into chat unless the user asks.
+6. Run the validator, then commit with `<EP>: storyboard 完成` or `<EP>: 重新生成分鏡`.
+
+Before regenerating any episode file, run `git status --short -- <episode-directory>`. If that episode has uncommitted changes, first commit them with `<EP>: 保存手動編修`. Do not ask for another confirmation before regeneration after this safeguard. Afterward, say that the previous version remains available in git.
 
 ## Generate static images
 

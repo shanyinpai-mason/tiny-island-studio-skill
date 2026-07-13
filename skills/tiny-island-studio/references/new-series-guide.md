@@ -18,6 +18,8 @@
 - 建立 `series/<id>/characters/`、`series/<id>/episodes/` 與 `series/<id>/image-prompts/`。
 - 把大型生成結果放在 `outputs/<id>/`，不要放入 `series/` 或 git。
 - 不複製其他系列的角色卡、anchors 或風格內容。
+- 在確認的 workspace 檢查 git；若尚未初始化，先建立 git repository。
+- `.gitignore` 必須包含 `outputs/**` 與 `!outputs/.gitkeep`，並建立 `outputs/.gitkeep`，讓大型媒體不進 git、目錄骨架仍可保留。
 
 命名規則：
 
@@ -38,6 +40,7 @@
   "format": "主影片",
   "cadence": "每週六發布",
   "outputRoot": "outputs/series-id",
+  "requireStoryboardStills": true,
   "cast": [],
   "createdAt": "YYYY-MM-DD"
 }
@@ -87,3 +90,5 @@ no text, no watermark, no extra limbs, no existing IP, no rapid cuts, no flashin
 - 建立單一系列初始化 commit。
 
 新 Episode 的 `episode.json` 預設加入 `storyboardImagesApproved: false` 與 `generateConfirmed: false`；只有對應的人工關卡完成後才改為 `true`。
+
+若使用者要先快速跑通一集，可明確把 `requireStoryboardStills` 設為 `false`；驗證器仍檢查分鏡與即夢提示詞，只把逐鏡靜態圖與核准降為非阻擋提示。

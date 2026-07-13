@@ -85,6 +85,8 @@ $tiny-island-studio 開一個新系列
 
 文字狀態與提示詞放在 `series/`；大型圖片、動畫與完成影片放在 `outputs/`。建議把 `series/` 納入 Git，並將 `outputs/` 排除後另行備份。
 
+新建 workspace 時，Skill 會確保 `.gitignore` 排除 `outputs/**`（保留 `outputs/.gitkeep`），並在 `series.json` 以 `requireStoryboardStills` 控制是否把逐鏡 storyboard 靜態圖設為硬性關卡。
+
 ## 需求
 
 - ChatGPT Work 或 Codex，並具備 Skills 與內建 image generation 能力。
@@ -97,4 +99,5 @@ $tiny-island-studio 開一個新系列
 python "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .\skills\tiny-island-studio
 node --check .\skills\tiny-island-studio\scripts\validate.mjs
 node --check .\skills\tiny-island-studio\scripts\import-localstorage.mjs
+node .\tests\run.mjs
 ```

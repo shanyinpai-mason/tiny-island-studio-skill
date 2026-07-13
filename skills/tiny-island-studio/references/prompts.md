@@ -21,15 +21,14 @@ Schema：`schemas/story.schema.json`
 要求：
 - 開頭 3 秒出現清楚問題。
 - 使用 Stop → Look → Think → Try → Fix Together。
-- 總長 2–4 分鐘；每鏡只有一個主要動作。
 - 產出 6–8 個故事節奏與完整繁體中文旁白。
-- 每個 `jimengPrompt` 使用簡體中文主體，遵守風格聖經，並逐字重申出場角色的英文 anchors、鏡頭、光線與場景。
-- 避免文字入鏡、額外肢體、危險模仿、高刺激剪接與現有 IP。
+- 這是 script 階段，不產生鏡頭、`jimengPrompt` 或 `storyboard.json`。
+- 避免危險模仿、過度刺激與現有 IP。
 
 只輸出單一 JSON，符合 skill 內的 schemas/story.schema.json，不含說明或 markdown 圍欄。
 ```
 
-把 `logline`、`storyBeats`、`narration` 寫入 `story.md`。Story 階段產生的 shots 是後續分鏡的草案，不可取代 storyboard 階段驗證。
+把 `logline`、`storyBeats`、`narration` 寫入 `story.md`。Storyboard 階段才產生鏡頭與提示詞。
 
 ## Storyboard
 
@@ -60,6 +59,8 @@ Schema：`schemas/storyboard.schema.json`
 ```
 
 把每個 `jimengPrompt` 同步寫入 `prompts/shot-NN.txt`。舊專案的 `seedancePrompt` 可繼續讀取，但新分鏡只產生 `jimengPrompt`。
+
+> 待即夢介面實測：若版本提供獨立的負面提示詞欄位，應把必要英文負面詞貼入該欄位；在確認前仍保留於每條 prompt 正文，以維持現有驗證規則。
 
 ## Storyboard 靜態圖
 

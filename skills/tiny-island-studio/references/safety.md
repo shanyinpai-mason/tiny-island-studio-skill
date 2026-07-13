@@ -35,31 +35,38 @@
 
 驗證器會讀取以下 JSON。維持單一 JSON 陣列，不要改變標記行。
 
+若角色名、地點或世界觀固定包含某個風險字，可在系列根目錄新增 `safety-allowlist.json`。只加入已由人判斷安全的「風險詞＋完整上下文」，不要只放單一泛用詞：
+
+```json
+[
+  { "term": "火", "context": "萤火虫" }
+]
+```
+
+詞表的 `exceptions` 是所有系列共用的明確誤報；系列 allowlist 則只影響該系列。「營火／营火」不在共用例外內，仍必須觸發人工檢查。
+
 <!-- RISK_TERMS_JSON_START -->
 ```json
 [
-  { "term": "knife", "category": "武器", "reason": "幼兒可能模仿持刀或切割動作。" },
-  { "term": "gun", "category": "武器", "reason": "槍械意象可能造成恐懼或危險模仿。" },
-  { "term": "刀", "category": "武器", "reason": "幼兒可能模仿持刀或切割動作。" },
-  { "term": "槍", "category": "武器", "reason": "槍械意象可能造成恐懼或危險模仿。" },
-  { "term": "fire", "category": "火與電", "reason": "明火情節可能引發危險模仿。" },
-  { "term": "flame", "category": "火與電", "reason": "火焰情節需要成人判斷情境是否安全。" },
-  { "term": "electric", "category": "火與電", "reason": "用電情節可能造成觸電模仿風險。" },
-  { "term": "火", "category": "火與電", "reason": "明火情節可能引發危險模仿。" },
-  { "term": "觸電", "category": "火與電", "reason": "觸電情節不適合讓幼兒模仿。" },
-  { "term": "swallow", "category": "危險模仿", "reason": "吞食非食物可能導致窒息或中毒。" },
-  { "term": "choke", "category": "危險模仿", "reason": "窒息情節可能造成不安且涉及高風險行為。" },
-  { "term": "climb high", "category": "危險模仿", "reason": "攀爬高處可能導致墜落。" },
-  { "term": "road", "category": "危險模仿", "reason": "道路場景需要明確的成人陪同與交通安全。" },
-  { "term": "吞", "category": "危險模仿", "reason": "吞食非食物可能導致窒息或中毒。" },
-  { "term": "馬路", "category": "危險模仿", "reason": "道路場景需要明確的成人陪同與交通安全。" },
-  { "term": "攀爬", "category": "危險模仿", "reason": "攀爬高處可能導致墜落。" },
-  { "term": "墜落", "category": "危險模仿", "reason": "墜落情節可能造成恐懼或模仿風險。" },
-  { "term": "blood", "category": "驚嚇", "reason": "血液畫面不符合低刺激幼兒內容。" },
-  { "term": "scary", "category": "驚嚇", "reason": "驚嚇元素需要確認不會威脅低齡觀眾。" },
-  { "term": "monster chase", "category": "驚嚇", "reason": "追逐威脅可能造成幼兒恐懼。" },
-  { "term": "血", "category": "驚嚇", "reason": "血液畫面不符合低刺激幼兒內容。" },
-  { "term": "恐怖", "category": "驚嚇", "reason": "恐怖元素需要確認不會威脅低齡觀眾。" }
+  { "terms": ["knife", "刀", "剪刀"], "category": "武器", "reason": "幼兒可能模仿持刀或切割動作。" },
+  { "terms": ["gun", "槍", "枪"], "category": "武器", "reason": "槍械意象可能造成恐懼或危險模仿。" },
+  { "terms": ["fire", "flame", "火"], "exceptions": ["螢火蟲", "萤火虫", "火車", "火车", "火柴", "打火機", "打火机"], "category": "火與電", "reason": "明火情節可能引發危險模仿。" },
+  { "terms": ["electric", "觸電", "触电"], "category": "火與電", "reason": "觸電情節不適合讓幼兒模仿。" },
+  { "terms": ["插座"], "category": "火與電", "reason": "插座與用電情節需要成人判斷是否會引發危險模仿。" },
+  { "terms": ["火柴", "打火機", "打火机"], "category": "火與電", "reason": "點火工具可能引發危險模仿。" },
+  { "terms": ["燙", "烫"], "category": "火與電", "reason": "高溫或燙傷情節需要確認有清楚的安全引導。" },
+  { "terms": ["swallow", "吞"], "exceptions": ["吞吞吐吐"], "category": "危險模仿", "reason": "吞食非食物可能導致窒息或中毒。" },
+  { "terms": ["choke", "溺水"], "category": "危險模仿", "reason": "窒息或溺水情節可能造成不安且涉及高風險行為。" },
+  { "terms": ["climb high", "攀爬"], "category": "危險模仿", "reason": "攀爬高處可能導致墜落。" },
+  { "terms": ["road", "馬路", "马路"], "category": "危險模仿", "reason": "道路場景需要明確的成人陪同與交通安全。" },
+  { "terms": ["墜落", "坠落"], "category": "危險模仿", "reason": "墜落情節可能造成恐懼或模仿風險。" },
+  { "terms": ["藥", "药"], "category": "危險模仿", "reason": "藥物情節需要避免誤食與自行服用的模仿風險。" },
+  { "terms": ["塑膠袋", "塑料袋"], "category": "危險模仿", "reason": "塑膠袋可能造成窒息風險。" },
+  { "terms": ["陌生人"], "category": "危險模仿", "reason": "陌生人互動需要清楚的照顧者與求助指引。" },
+  { "terms": ["躲進冰箱", "躲进冰箱", "躲進洗衣機", "躲进洗衣机"], "category": "危險模仿", "reason": "躲入密閉家電可能造成窒息或受困。" },
+  { "terms": ["blood", "血"], "category": "驚嚇", "reason": "血液畫面不符合低刺激幼兒內容。" },
+  { "terms": ["scary", "恐怖"], "category": "驚嚇", "reason": "驚嚇元素需要確認不會威脅低齡觀眾。" },
+  { "terms": ["monster chase"], "category": "驚嚇", "reason": "追逐威脅可能造成幼兒恐懼。" }
 ]
 ```
 <!-- RISK_TERMS_JSON_END -->
