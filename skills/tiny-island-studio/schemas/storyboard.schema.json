@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["totalDuration", "directorNote", "shots"],
+  "properties": {
+    "totalDuration": { "type": "integer", "minimum": 90, "maximum": 180 },
+    "directorNote": { "type": "string", "minLength": 1 },
+    "shots": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["no", "duration", "description", "sound"],
+        "oneOf": [
+          { "required": ["jimengPrompt"], "not": { "required": ["seedancePrompt"] } },
+          { "required": ["seedancePrompt"], "not": { "required": ["jimengPrompt"] } }
+        ],
+        "properties": {
+          "no": { "type": "integer", "minimum": 1 },
+          "duration": { "type": "integer", "minimum": 2, "maximum": 15 },
+          "description": { "type": "string", "minLength": 1 },
+          "jimengPrompt": { "type": "string", "minLength": 1 },
+          "seedancePrompt": { "type": "string", "minLength": 1 },
+          "sound": { "type": "string" }
+        }
+      }
+    }
+  }
+}

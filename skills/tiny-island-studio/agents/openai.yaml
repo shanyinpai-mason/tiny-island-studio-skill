@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tiny Island Studio"
+  short_description: "直接生成靜態圖、管理即夢動畫提示詞、人工核准與硬性製作關卡"
+  default_prompt: "Use $tiny-island-studio to continue my children animation production, generate required static images, and prepare the next Jimeng video prompts."
