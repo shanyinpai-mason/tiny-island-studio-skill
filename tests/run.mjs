@@ -72,17 +72,43 @@ Lumi 和朋友一起解決小問題。${extra}
 Lumi 溫柔地邀請朋友合作。`
 }
 
+function modeStoryMarkdown(mode, script, extra = '') {
+  const heading = mode === 'nonverbal' ? '動作與聲音腳本' : '完整旁白'
+  return `---
+narrationMode: ${mode}
+---
+
+# 測試集
+
+## Logline
+
+Lumi 和朋友一起解決小問題。${extra}
+
+## 故事節奏
+
+1. 發現問題
+2. 停下來
+3. 仔細觀察
+4. 一起思考
+5. 嘗試方法
+6. 合作完成
+
+## ${heading}
+
+${script}`
+}
+
 function prompt(extra = '') {
   return `温柔儿童动画，Lumi 轻轻观察，blue crescent badge，round amber boots，固定柔光。${extra} no text, no watermark, no extra limbs, no existing IP`
 }
 
-function storyboard(extraPrompt = '') {
+function storyboard(extraPrompt = '', sound = '柔和環境音') {
   const shots = Array.from({ length: 12 }, (_, index) => ({
     no: index + 1,
     duration: 8,
     description: `Lumi 完成第 ${index + 1} 個安全動作。`,
     jimengPrompt: prompt(index === 0 ? extraPrompt : ''),
-    sound: '柔和環境音',
+    sound,
   }))
   return { totalDuration: 96, directorNote: '低刺激、固定鏡頭。', shots }
 }
@@ -91,12 +117,14 @@ async function createWorkspace(name, options = {}) {
   const workspace = join(root, name)
   const seriesDir = join(workspace, 'series', 'test-series')
   const episodeDir = join(seriesDir, 'episodes', 'EP01-test')
-  const board = storyboard(options.extraPrompt || '')
-  await write(join(seriesDir, 'series.json'), JSON.stringify({
+  const board = storyboard(options.extraPrompt || '', options.sound ?? '柔和環境音')
+  const series = {
     id: 'test-series', name: '測試系列', targetAge: '3-7', format: '主影片', cadence: '每週',
     outputRoot: 'outputs/test-series', requireStoryboardStills: options.requireStoryboardStills ?? false,
     cast: ['lumi'], createdAt: today(),
-  }, null, 2))
+    ...(options.seriesNarrationMode ? { narrationMode: options.seriesNarrationMode } : {}),
+  }
+  await write(join(seriesDir, 'series.json'), JSON.stringify(series, null, 2))
   const character = `---
 name: Lumi
 role: 主角
@@ -110,7 +138,7 @@ anchors: ${JSON.stringify(options.anchors || ['blue crescent badge', 'round ambe
 溫柔的原創角色。`
   await write(join(seriesDir, 'characters', 'lumi.md'), character, options.bom === true)
   await write(join(episodeDir, 'episode.json'), JSON.stringify(episodeData(options.episode || {}), null, 2), options.bom === true)
-  await write(join(episodeDir, 'story.md'), storyMarkdown(options.storyExtra || ''))
+  await write(join(episodeDir, 'story.md'), options.storyContent ?? storyMarkdown(options.storyExtra || ''))
   if (options.withStoryboard !== false) {
     await write(join(episodeDir, 'storyboard.json'), JSON.stringify(board, null, 2))
     for (const shot of board.shots) {
@@ -158,7 +186,77 @@ try {
 
   const scriptOnly = await createWorkspace('script-only', { withStoryboard: false, episode: { stage: 'script' } })
   result = runNode(validateScript, [scriptOnly.episodeDir, '--gate', 'script'])
-  assert(result.code === 0, 'script gate 不受缺少 storyboard.json 影響', result.output)
+  assert(result.code === 0, '舊版無 frontmatter spoken story 通過，且不受缺少 storyboard.json 影響', result.output)
+
+  const spoken = await createWorkspace('spoken', {
+    withStoryboard: false,
+    episode: { stage: 'script', narrationMode: 'spoken' },
+    storyContent: modeStoryMarkdown('spoken', 'Lumi 溫柔地邀請朋友合作。'),
+  })
+  result = runNode(validateScript, [spoken.episodeDir, '--gate', 'script'])
+  assert(result.code === 0, '新版 spoken story 有非空完整旁白時通過 Script gate', result.output)
+
+  const spokenMissing = await createWorkspace('spoken-missing', {
+    withStoryboard: false,
+    episode: { stage: 'script', narrationMode: 'spoken' },
+    storyContent: modeStoryMarkdown('spoken', ''),
+  })
+  result = runNode(validateScript, [spokenMissing.episodeDir, '--gate', 'script'])
+  assert(result.code !== 0 && result.output.includes('story.md 有完整旁白'), 'spoken 缺少完整旁白時 Script gate 失敗', result.output)
+
+  const nonverbal = await createWorkspace('nonverbal', {
+    withStoryboard: false,
+    episode: { stage: 'script', narrationMode: 'nonverbal' },
+    storyContent: modeStoryMarkdown('nonverbal', 'Lumi 看向歪掉的積木，低聲「hmm」；音樂停下，留兩秒思考。最後響起 Pom–Pi–Ko–Fix!'),
+  })
+  result = runNode(validateScript, [nonverbal.episodeDir, '--gate', 'script'])
+  assert(result.code === 0, '新版 nonverbal story 有動作與聲音腳本且無旁白時通過 Script gate', result.output)
+
+  const nonverbalMissing = await createWorkspace('nonverbal-missing', {
+    withStoryboard: false,
+    episode: { stage: 'script', narrationMode: 'nonverbal' },
+    storyContent: modeStoryMarkdown('nonverbal', ''),
+  })
+  result = runNode(validateScript, [nonverbalMissing.episodeDir, '--gate', 'script'])
+  assert(result.code !== 0 && result.output.includes('story.md 有動作與聲音腳本'), 'nonverbal 缺少動作與聲音腳本時 Script gate 失敗', result.output)
+
+  const seriesNonverbal = await createWorkspace('series-nonverbal', {
+    withStoryboard: false,
+    seriesNarrationMode: 'nonverbal',
+    episode: { stage: 'script' },
+    storyContent: modeStoryMarkdown('nonverbal', 'Lumi 指向答案，朋友回以「oh」；柔和音樂轉亮。'),
+  })
+  result = runNode(validateScript, [seriesNonverbal.episodeDir, '--gate', 'script'])
+  assert(result.code === 0 && result.output.includes('來源：series.json'), 'series narrationMode 在 episode 未設定時生效', result.output)
+
+  const episodeOverride = await createWorkspace('episode-override', {
+    withStoryboard: false,
+    seriesNarrationMode: 'nonverbal',
+    episode: { stage: 'script', narrationMode: 'spoken' },
+    storyContent: modeStoryMarkdown('spoken', 'Episode 層級恢復完整繁體中文旁白。'),
+  })
+  result = runNode(validateScript, [episodeOverride.episodeDir, '--gate', 'script'])
+  assert(result.code === 0 && result.output.includes('來源：episode.json'), 'episode narrationMode 優先於 series', result.output)
+
+  const nonverbalRisk = await createWorkspace('nonverbal-risk', {
+    withStoryboard: false,
+    episode: { stage: 'script', narrationMode: 'nonverbal' },
+    storyContent: modeStoryMarkdown('nonverbal', 'Lumi 指向插座並發出「uh-oh」，音樂停止。'),
+  })
+  result = runNode(validateScript, [nonverbalRisk.episodeDir, '--gate', 'script'])
+  assert(result.output.includes('動作與聲音腳本') && result.output.includes('風險詞「插座」'), '風險詞掃描涵蓋 audioActionScript', result.output)
+
+  const nonverbalEmptySound = await createWorkspace('nonverbal-empty-sound', {
+    episode: { narrationMode: 'nonverbal' },
+    storyContent: modeStoryMarkdown('nonverbal', 'Lumi 觀察並比出答案，朋友點頭。'),
+    sound: '',
+  })
+  result = runNode(validateScript, [nonverbalEmptySound.episodeDir, '--gate', 'storyboard'])
+  assert(result.code !== 0 && result.output.includes('nonverbal sound 必須描述'), 'nonverbal storyboard 每鏡 sound 不可空白', result.output)
+
+  result = runNode(validateScript, ['--status', join(clean.workspace, 'series')])
+  const statusMarkdown = await readFile(join(clean.workspace, 'series', 'STATUS.md'), 'utf8')
+  assert(result.code === 0 && statusMarkdown.includes('Tiny Island Studio 製作狀態') && statusMarkdown.includes('EP01'), '--status 仍可更新 dashboard', result.output)
 
   const schedule = await createWorkspace('schedule', { episode: { stage: 'scheduled', publishDate: today() } })
   result = runNode(validateScript, [schedule.episodeDir, '--gate', 'scheduled'])
@@ -192,6 +290,21 @@ try {
   const todoCard = await readFile(join(todoWorkspace, 'series', 'todo', 'characters', 'mika.md'), 'utf8')
   const todoSeries = JSON.parse(await readFile(join(todoWorkspace, 'series', 'todo', 'series.json'), 'utf8'))
   assert(todoCard.includes('approved: false') && todoCard.includes('anchorStatus: needs-review') && todoCard.includes('TODO-visual-anchor-1') && !todoSeries.cast.includes('mika'), '缺少 anchors 的匯入角色會醒目標記、保持未核准且不加入 cast', result.output)
+
+  const importNonverbalWorkspace = join(root, 'import-nonverbal')
+  const importNonverbalExport = join(importNonverbalWorkspace, 'export.json')
+  await write(importNonverbalExport, JSON.stringify({
+    'tis-v2-episodes': [{
+      code: 'EP02', title: '無語言測試', narrationMode: 'nonverbal',
+      story: { logline: '用動作合作。', storyBeats: ['一', '二', '三', '四', '五', '六'], audioActionScript: '互看後點頭，響起 Pom–Pi–Ko–Fix!' },
+    }],
+    'tis-v2-assets': [],
+  }))
+  result = runNode(importScript, [importNonverbalExport, '--series', 'nv'], { env: { TINY_ISLAND_WORKSPACE: importNonverbalWorkspace } })
+  const importedEpisodeDir = join(importNonverbalWorkspace, 'series', 'nv', 'episodes', 'EP02-無語言測試')
+  const importedEpisode = JSON.parse(await readFile(join(importedEpisodeDir, 'episode.json'), 'utf8'))
+  const importedStory = await readFile(join(importedEpisodeDir, 'story.md'), 'utf8')
+  assert(result.code === 0 && importedEpisode.narrationMode === 'nonverbal' && importedStory.includes('narrationMode: nonverbal') && importedStory.includes('## 動作與聲音腳本') && !importedStory.includes('## 完整旁白'), 'importer 保留 nonverbal 模式並輸出新 story.md 規格', result.output)
 } finally {
   if (process.env.KEEP_TINY_ISLAND_TESTS !== '1' && existsSync(root)) await rm(root, { recursive: true, force: true })
 }

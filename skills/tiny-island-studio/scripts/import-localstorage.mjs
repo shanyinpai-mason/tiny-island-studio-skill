@@ -15,9 +15,9 @@ const inputPath = args.find((arg, index) => !arg.startsWith('--') && index !== s
 const force = args.includes('--force')
 const seriesId = seriesIndex >= 0 ? args[seriesIndex + 1] : 'tiny-island'
 
-const editItems = [
+const narrationModes = ['spoken', 'nonverbal']
+const baseEditItems = [
   '每個鏡頭只有一個清楚動作',
-  '旁白與畫面同步',
   '前 3 秒問題清楚',
   '音效不突然、不過度刺激',
   '片尾保留合作成功的情緒落點',
@@ -64,6 +64,15 @@ function yamlString(value) {
   return JSON.stringify(String(value ?? ''))
 }
 
+function validNarrationMode(value) {
+  return narrationModes.includes(value) ? value : null
+}
+
+function editItemsForMode(narrationMode) {
+  const syncItem = narrationMode === 'nonverbal' ? '動作與聲音腳本與畫面同步' : '旁白與畫面同步'
+  return [baseEditItems[0], syncItem, ...baseEditItems.slice(1)]
+}
+
 async function writeText(path, content) {
   await mkdir(dirname(path), { recursive: true })
   if (!force && existsSync(path)) {
@@ -81,26 +90,32 @@ async function writeMergedSeries(path, data) {
   console.log(`合併並寫回：${path}`)
 }
 
-function reviewMarkdown(episode) {
+function reviewMarkdown(episode, narrationMode) {
   const editChecks = new Set(Array.isArray(episode.editChecks) ? episode.editChecks : [])
   const safetyChecks = new Set(Array.isArray(episode.reviewChecks) ? episode.reviewChecks : [])
   const lines = [`# ${episode.code} 剪輯與安全審核`, '', '## 剪輯清單', '']
-  for (const item of editItems) lines.push(`- [${editChecks.has(item) ? 'x' : ' '}] ${item}`)
+  for (const item of editItemsForMode(narrationMode)) lines.push(`- [${editChecks.has(item) ? 'x' : ' '}] ${item}`)
   lines.push('', '## 發布前審核清單', '')
   for (const item of reviewItems) lines.push(`- [${safetyChecks.has(item) ? 'x' : ' '}] ${item}`)
   lines.push('', '## 風險詞人工確認', '', '尚未確認。', '')
   return lines.join('\n')
 }
 
-function storyMarkdown(episode) {
+function storyMarkdown(episode, narrationMode) {
   const story = episode.story
   if (!story || typeof story !== 'object') return null
   const beats = Array.isArray(story.beats) ? story.beats : Array.isArray(story.storyBeats) ? story.storyBeats : []
+  const scriptHeading = narrationMode === 'nonverbal' ? '## 動作與聲音腳本' : '## 完整旁白'
+  const script = narrationMode === 'nonverbal' ? story.audioActionScript : story.narration
   return [
+    '---',
+    `narrationMode: ${narrationMode}`,
+    '---',
+    '',
     `# ${episode.title}`,
     '', '## Logline', '', story.logline || '',
     '', '## 故事節奏', '', ...beats.map((beat, index) => `${index + 1}. ${beat}`),
-    '', '## 完整旁白', '', story.narration || '',
+    '', scriptHeading, '', script || '',
   ].join('\n')
 }
 
@@ -195,6 +210,8 @@ async function main() {
     if (!source || typeof source !== 'object') continue
     const code = /^EP\d+$/i.test(source.code || '') ? source.code.toUpperCase() : `EP${String(Date.now()).slice(-4)}`
     const episodeDir = join(seriesDir, 'episodes', safeFolder(`${code}-${source.title || '未命名'}`))
+    const importedNarrationMode = validNarrationMode(source.narrationMode) || validNarrationMode(source.story?.narrationMode)
+    const effectiveNarrationMode = importedNarrationMode || validNarrationMode(existingSeries.narrationMode) || 'spoken'
     const episode = {
       code,
       title: source.title || '未命名',
@@ -208,9 +225,10 @@ async function main() {
       emotion: source.emotion || '',
       storyboardImagesApproved: false,
       generateConfirmed: source.generateConfirmed === true,
+      ...(importedNarrationMode ? { narrationMode: importedNarrationMode } : {}),
     }
     await writeText(join(episodeDir, 'episode.json'), JSON.stringify(episode, null, 2))
-    const story = storyMarkdown(source)
+    const story = storyMarkdown(source, effectiveNarrationMode)
     if (story) await writeText(join(episodeDir, 'story.md'), story)
     const shots = Array.isArray(source.shots) ? source.shots.map((shot, index) => ({
       no: index + 1,
@@ -227,7 +245,7 @@ async function main() {
       }, null, 2))
       for (const shot of shots) await writeText(join(episodeDir, 'prompts', `shot-${String(shot.no).padStart(2, '0')}.txt`), shot.seedancePrompt)
     }
-    await writeText(join(episodeDir, 'review.md'), reviewMarkdown(source))
+    await writeText(join(episodeDir, 'review.md'), reviewMarkdown(source, effectiveNarrationMode))
   }
 
   console.log(`\n匯入完成：${episodes.length} 集、${assets.length} 項資產`)

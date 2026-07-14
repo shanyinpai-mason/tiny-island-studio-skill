@@ -18,17 +18,42 @@ Schema：`schemas/story.schema.json`
 本集已核准角色（只可使用這份名單）：
 {{APPROVED_CHARACTERS_WITH_VISUAL_BIBLE}}
 
-要求：
+有效旁白模式（episode.json 優先於 series.json，皆未設定時為 spoken）：
+{{NARRATION_MODE}}
+
+共同要求：
 - 開頭 3 秒出現清楚問題。
 - 使用 Stop → Look → Think → Try → Fix Together。
-- 產出 6–8 個故事節奏與完整繁體中文旁白。
+- 產出 6–8 個故事節奏；認知答案與情緒轉折必須適齡、清楚。
+- 只能使用上方已核准角色。
 - 這是 script 階段，不產生鏡頭、`jimengPrompt` 或 `storyboard.json`。
-- 避免危險模仿、過度刺激與現有 IP。
+- 完全原創、安全、低刺激、適齡；避免危險模仿、過度刺激與現有 IP。
+
+依 `{{NARRATION_MODE}}` 只採用一個分支：
+
+- `spoken`：輸出 `narrationMode: "spoken"` 與非空 `narration`，內容為完整繁體中文旁白，維持既有完整旁白流程。
+- `nonverbal`：輸出 `narrationMode: "nonverbal"` 與非空 `audioActionScript`，不得輸出 `narration`。`audioActionScript` 依 6–8 個故事節奏逐段寫成可製作的動作與聲音腳本，每段必須按需要清楚描述：
+  - 可見動作與情緒表演；
+  - 角色視線、指向、互相觀察與反應；
+  - `hmm`、`oh`、`ah`、`uh-oh` 等短促非語言發聲；
+  - 擬聲、道具聲與環境音；
+  - 音樂開始、停止、提示、強弱與情緒轉折；
+  - 讓觀眾觀察或思考答案所需的刻意停頓；
+  - 合作修復成功時的固定品牌聲 `Pom–Pi–Ko–Fix!`。
+- `nonverbal` 禁止敘事者、完整對話、完整口語句子、字幕式說明，以及必須理解中文或其他特定語言才能執行的指示。認知答案與情緒轉折必須由畫面、表演與聲音本身理解，不能靠文字補充。
 
 只輸出單一 JSON，符合 skill 內的 schemas/story.schema.json，不含說明或 markdown 圍欄。
 ```
 
-把 `logline`、`storyBeats`、`narration` 寫入 `story.md`。Storyboard 階段才產生鏡頭與提示詞。
+把 `logline`、`storyBeats` 與模式對應腳本寫入 `story.md`。新檔案開頭必須是以下 frontmatter；`spoken` 使用 `## 完整旁白`，`nonverbal` 使用 `## 動作與聲音腳本`：
+
+```yaml
+---
+narrationMode: spoken
+---
+```
+
+把 `spoken` 改成實際有效模式。既有沒有 frontmatter 的 `story.md` 視為 `spoken`。Storyboard 階段才產生鏡頭與提示詞。
 
 ## Storyboard
 
@@ -46,7 +71,10 @@ Schema：`schemas/storyboard.schema.json`
 本集資料與故事：
 {{EPISODE_AND_STORY}}
 
-要求：
+有效旁白模式：
+{{NARRATION_MODE}}
+
+共同要求：
 - 產出 12–20 鏡，總長 90–180 秒，單鏡 2–15 秒。
 - 前 3 秒清楚呈現問題，依 Stop → Look → Think → Try → Fix Together 推進。
 - 每鏡只有一個主要動作，包含描述、秒數、聲音與簡體中文即夢提示詞 `jimengPrompt`。
@@ -54,6 +82,14 @@ Schema：`schemas/storyboard.schema.json`
 - 每條提示詞必須逐字包含所有出場角色的英文 anchors。
 - 每條提示詞必須包含 no text, no watermark, no extra limbs, no existing IP。
 - 維持固定角色顏色、比例、材質、鏡頭、光線與場景；避免危險模仿、頻閃與快速剪接。
+
+依 `{{NARRATION_MODE}}` 套用模式規則：
+
+- `spoken`：維持既有分鏡與旁白行為。
+- `nonverbal`：
+  - 每鏡 `sound` 必須非空，明確描述至少一項角色短聲、擬聲、環境音、音樂提示或刻意靜默；需要時標示音樂開始、停止與情緒轉折。
+  - `jimengPrompt` 不得要求生成敘事旁白、完整對話或完整口語句子；角色只可有 `hmm`、`oh`、`ah`、`uh-oh` 等短促非語言發聲與固定品牌聲 `Pom–Pi–Ko–Fix!`。
+  - 以可見動作、構圖、視線、指向、表情反應及可見結果傳達問題、思考、答案與情緒轉折，不可依賴特定語言、字幕或文字才能理解。
 
 只輸出單一 JSON，符合 skill 內的 schemas/storyboard.schema.json，不含說明或 markdown 圍欄。
 ```

@@ -61,7 +61,7 @@ Use these stages in order:
 | Current stage | Do one thing | Completion rule |
 |---|---|---|
 | `idea` | Fill `hook`, `learning`, and `emotion` in `episode.json` | All three are non-empty |
-| `script` | Generate or edit `story.md` | Non-empty logline, 6–8 beats, and narration |
+| `script` | Generate or edit `story.md` | Non-empty logline, 6–8 beats, and mode-appropriate non-empty narration or audio/action script |
 | `storyboard` | Generate `storyboard.json`, saved prompts, and storyboard stills when required | Schema-valid 12–20 shots, 2–15 seconds each, 90–180 seconds total; prompts synchronized; when `requireStoryboardStills` is not `false`, every storyboard still is generated and user-approved |
 | `generate` | Let the user generate each animation take in Jimeng and ingest the files | Every shot has at least one `take-NN.mp4`; user confirms completion; set `generateConfirmed: true` |
 | `edit` | Present and record the edit checklist in `review.md` | Every edit checkbox is checked |
@@ -83,18 +83,19 @@ When targeting `scheduled`, require a `publishDate` of local today or later. Whe
 
 Read the corresponding template in [references/prompts.md](references/prompts.md) and the applicable schema.
 
-1. Inject the complete style bible.
-2. Inject `name` and `視覺聖經` only for approved characters selected for the episode.
-3. Generate one JSON object without a Markdown fence.
-4. Validate against `schemas/story.schema.json`, then write only `story.md`. Do not create `storyboard.json` or shot prompt files during the script stage.
-5. If validation fails, repair and retry at most twice. Report the blocker after the second failure.
-6. Run the validator, then commit with `<EP>: script 完成`.
+1. Resolve `narrationMode` from `episode.json`, then `series.json`, defaulting to `spoken`; reject values other than `spoken` or `nonverbal`.
+2. Inject the complete style bible and the resolved mode.
+3. Inject `name` and `視覺聖經` only for approved characters selected for the episode.
+4. Generate one JSON object without a Markdown fence and validate it against `schemas/story.schema.json`.
+5. Write only `story.md`, with `narrationMode` in frontmatter and the mode-specific heading defined in the prompt reference. Treat legacy `story.md` without frontmatter as `spoken`. Do not create storyboard files during the script stage.
+6. If validation fails, repair and retry at most twice. Report the blocker after the second failure.
+7. Run the validator, then commit with `<EP>: script 完成`.
 
 ## Generate the storyboard
 
-1. Read the approved `story.md`, style bible, and approved character cards.
-2. Generate and validate one JSON object against `schemas/storyboard.schema.json`.
-3. Write a Simplified-Chinese `jimengPrompt` for each shot. Keep English character anchors and required negative phrases verbatim. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
+1. Read the approved `story.md`, style bible, and approved character cards; resolve `narrationMode` with the same episode → series → `spoken` rule.
+2. Generate and validate one JSON object against `schemas/storyboard.schema.json`. In `nonverbal`, follow the reference's visual storytelling and per-shot sound rules; in `spoken`, preserve the existing behavior.
+3. Write a Simplified-Chinese `jimengPrompt` for each shot. Keep English character anchors and required negative phrases verbatim. In `nonverbal`, do not request narration or complete spoken sentences. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
 4. Keep each shot's `jimengPrompt` or legacy `seedancePrompt` byte-for-byte equal to `prompts/shot-NN.txt` after trimming surrounding whitespace.
 5. Save one static-image prompt per shot under `image-prompts/storyboard/`. When `series.json.requireStoryboardStills` is not `false`, directly generate the stills and save them under the matching `outputs/` path. Never paste static-image prompts into chat unless the user asks.
 6. Run the validator, then commit with `<EP>: storyboard 完成` or `<EP>: 重新生成分鏡`.

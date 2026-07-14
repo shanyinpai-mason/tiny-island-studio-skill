@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["title", "hook", "logline", "learningGoal", "emotionalGoal", "storyBeats", "narration"],
+  "required": ["title", "hook", "logline", "learningGoal", "emotionalGoal", "storyBeats"],
   "properties": {
     "title": { "type": "string", "minLength": 1 },
     "hook": { "type": "string", "minLength": 1 },
@@ -15,6 +15,21 @@
       "minItems": 6,
       "maxItems": 8
     },
-    "narration": { "type": "string", "minLength": 1 }
-  }
+    "narrationMode": { "type": "string", "enum": ["spoken", "nonverbal"] },
+    "narration": { "type": "string", "minLength": 1 },
+    "audioActionScript": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["narrationMode"],
+        "properties": { "narrationMode": { "const": "nonverbal" } }
+      },
+      "then": {
+        "required": ["audioActionScript"],
+        "not": { "required": ["narration"] }
+      },
+      "else": { "required": ["narration"] }
+    }
+  ]
 }

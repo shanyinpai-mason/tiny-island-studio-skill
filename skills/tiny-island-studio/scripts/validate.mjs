@@ -6,9 +6,9 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const STAGES = ['idea', 'script', 'storyboard', 'generate', 'edit', 'review', 'scheduled', 'published']
-const EDIT_ITEMS = [
+const NARRATION_MODES = ['spoken', 'nonverbal']
+const BASE_EDIT_ITEMS = [
   '每個鏡頭只有一個清楚動作',
-  '旁白與畫面同步',
   '前 3 秒問題清楚',
   '音效不突然、不過度刺激',
   '片尾保留合作成功的情緒落點',
@@ -75,6 +75,19 @@ async function readJson(path, label) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function narrationModeState(episode, series) {
+  const episodeHasMode = Object.prototype.hasOwnProperty.call(episode ?? {}, 'narrationMode')
+  const seriesHasMode = Object.prototype.hasOwnProperty.call(series ?? {}, 'narrationMode')
+  const source = episodeHasMode ? 'episode.json' : seriesHasMode ? 'series.json' : 'default'
+  const value = episodeHasMode ? episode.narrationMode : seriesHasMode ? series.narrationMode : 'spoken'
+  return { value, source, valid: NARRATION_MODES.includes(value) }
+}
+
+function editItemsForMode(narrationMode) {
+  const syncItem = narrationMode === 'nonverbal' ? '動作與聲音腳本與畫面同步' : '旁白與畫面同步'
+  return [BASE_EDIT_ITEMS[0], syncItem, ...BASE_EDIT_ITEMS.slice(1)]
 }
 
 function findWorkspaceRoot(start) {
@@ -145,11 +158,14 @@ function section(markdown, names) {
 }
 
 function storyState(markdown) {
+  const metadata = parseFrontmatter(markdown)
+  const narrationMode = Object.prototype.hasOwnProperty.call(metadata, 'narrationMode') ? metadata.narrationMode : 'spoken'
   const logline = section(markdown, ['Logline', '一句話故事'])
   const beatsText = section(markdown, ['故事節奏', 'Story Beats'])
   const narration = section(markdown, ['完整旁白', 'Narration'])
+  const audioActionScript = section(markdown, ['動作與聲音腳本', 'Audio Action Script'])
   const beats = beatsText.split(/\r?\n/).filter(line => /^\s*(?:[-*]|\d+[.)])\s+\S/.test(line))
-  return { logline, beatsText, narration, beats }
+  return { narrationMode, logline, beatsText, narration, audioActionScript, beats }
 }
 
 function checkedLines(markdown, headingNames) {
@@ -249,6 +265,7 @@ function findRisks(storyMarkdown, storyboard, risks, allowlist) {
   inspect('story.md', 'Logline', parsed.logline)
   inspect('story.md', '故事節奏', parsed.beatsText)
   inspect('story.md', '完整旁白', parsed.narration)
+  inspect('story.md', '動作與聲音腳本', parsed.audioActionScript)
   for (const shot of storyboard?.shots ?? []) {
     const location = `鏡頭${String(shot.no).padStart(2, '0')}`
     inspect(location, 'description', shot.description)
@@ -307,7 +324,7 @@ function validateAnchors(character, output) {
   return valid
 }
 
-async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, blocking }) {
+async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode, blocking }) {
   let valid = Boolean(storyboard)
   const check = (ok, message) => {
     if (blocking) report(ok, message)
@@ -341,6 +358,7 @@ async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, se
     check(Number.isInteger(shot.no) && shot.no === index + 1, `${label} no 必須連號`)
     check(Number.isInteger(shot.duration) && shot.duration >= 2 && shot.duration <= 15, `${label} duration 必須是 2–15 秒整數`)
     check(isNonEmptyString(shot.description) && isNonEmptyString(videoPrompt(shot)) && typeof shot.sound === 'string', `${label} 文字欄位格式正確`)
+    if (narrationMode === 'nonverbal') check(isNonEmptyString(shot.sound), `${label} nonverbal sound 必須描述短聲、擬聲、環境音、音樂提示或刻意靜默`)
     if (Number.isInteger(shot.duration)) calculatedDuration += shot.duration
   }
   check(calculatedDuration >= 90 && calculatedDuration <= 180, `總時長 ${calculatedDuration} 秒，應為 90–180 秒`)
@@ -397,6 +415,10 @@ async function validateEpisode(inputDir) {
   const seriesDir = dirname(dirname(episodeDir))
   const seriesPath = join(seriesDir, 'series.json')
   const series = existsSync(seriesPath) ? await readJson(seriesPath, 'series.json') : null
+  const narrationMode = narrationModeState(episode, series)
+  report(narrationMode.valid, narrationMode.valid
+    ? `narrationMode 為 ${narrationMode.value}（來源：${narrationMode.source}）`
+    : `${narrationMode.source} 的 narrationMode 必須是 spoken 或 nonverbal`)
   const seriesId = series?.id || basename(seriesDir)
   const workspaceRoot = findWorkspaceRoot(episodeDir)
   const outputRoot = resolve(workspaceRoot, series?.outputRoot || join('outputs', seriesId))
@@ -407,8 +429,11 @@ async function validateEpisode(inputDir) {
   const storyMarkdown = existsSync(storyPath) ? await readUtf8(storyPath) : ''
   const reviewMarkdown = existsSync(reviewPath) ? await readUtf8(reviewPath) : ''
   const parsedStory = storyState(storyMarkdown)
+  if (existsSync(storyPath) && narrationMode.valid) {
+    report(parsedStory.narrationMode === narrationMode.value, `story.md narrationMode 為 ${parsedStory.narrationMode}，應為 ${narrationMode.value}`)
+  }
   const storyboard = existsSync(storyboardPath) ? await readJson(storyboardPath, 'storyboard.json') : null
-  const storyboardValid = await validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, blocking: storyboardBlocking })
+  const storyboardValid = await validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode: narrationMode.value, blocking: storyboardBlocking })
 
   const risks = findRisks(storyMarkdown, storyboard, await loadRiskTerms(), await loadSafetyAllowlist(seriesDir))
   const unresolvedRisks = risks.filter(finding => !riskConfirmed(finding, reviewMarkdown))
@@ -427,7 +452,12 @@ async function validateEpisode(inputDir) {
       report(existsSync(storyPath), 'story.md 存在')
       report(isNonEmptyString(parsedStory.logline), 'story.md 有 Logline')
       report(parsedStory.beats.length >= 6 && parsedStory.beats.length <= 8, `story.md 有 ${parsedStory.beats.length} 個故事節奏，應為 6–8`)
-      report(isNonEmptyString(parsedStory.narration), 'story.md 有完整旁白')
+      if (narrationMode.value === 'nonverbal') {
+        report(isNonEmptyString(parsedStory.audioActionScript), 'story.md 有動作與聲音腳本')
+        report(!isNonEmptyString(parsedStory.narration), 'nonverbal story.md 不含完整旁白')
+      } else {
+        report(isNonEmptyString(parsedStory.narration), 'story.md 有完整旁白')
+      }
     }
     if (effectiveGate === 'storyboard') {
       report(storyboardValid, '分鏡結構、提示詞與角色一致性通過')
@@ -459,7 +489,7 @@ async function validateEpisode(inputDir) {
     if (effectiveGate === 'edit') {
       report(existsSync(reviewPath), 'review.md 存在')
       const checked = checkedLines(reviewMarkdown, ['剪輯清單'])
-      for (const item of EDIT_ITEMS) report(checked.some(line => line.includes(item)), `剪輯確認：${item}`)
+      for (const item of editItemsForMode(narrationMode.value)) report(checked.some(line => line.includes(item)), `剪輯確認：${item}`)
     }
     if (effectiveGate === 'review') {
       report(existsSync(reviewPath), 'review.md 存在')

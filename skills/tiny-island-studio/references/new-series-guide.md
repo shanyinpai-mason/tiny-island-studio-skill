@@ -46,6 +46,8 @@
 }
 ```
 
+`narrationMode` 是 `series.json` 與 `episode.json` 的可選欄位，只能是 `"spoken"` 或 `"nonverbal"`。Episode 設定優先於 series；兩者都省略時使用 `spoken`。只有使用者要為整個系列或特定集數指定模式時才寫入此欄位。
+
 ## style-bible.md 模板
 
 ```markdown
