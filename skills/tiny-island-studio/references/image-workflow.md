@@ -65,10 +65,13 @@ outputs/<series-id>/<episode-folder>/images/
 
 ## Storyboard 圖
 
+- 先完整讀取 `references/continuity.md`。`continuity.json` 內所有本集使用的 location／prop reference 必須已生成、已展示、已核准；第一張分鏡前執行 validator 的 `--continuity` 預檢。
 - 依 `storyboard.json` 順序逐鏡生成，一個鏡頭一張圖。
 - 使用單一靜態構圖，不在圖中放鏡號、字幕、說明、對話框或 UI。
 - 將鏡頭動作轉成最能代表該動作的清楚瞬間；避免在一張圖塞入動作的多個時間點。
-- 優先使用已核准角色圖、場景圖和道具圖作 reference images。
+- 每鏡必須實際附上已核准角色圖，以及該鏡 `locationId`、`propIds` 綁定的 reference images；不是只把它們寫進文字提示詞。缺少任一 continuity-critical reference 時停止該鏡。
+- 每鏡提示詞原樣包含綁定資產的 anchors，並要求保持 reference 的 layout、geometry、colors、materials 和 object count。不要用同義改寫 anchors。
+- 生成後逐項比對角色、場景幾何、固定物位置、道具形狀／顏色／零件數量；任一漂移就產生下一版，不得核准。
 - 全部鏡頭生成後依序展示供使用者審閱。只有使用者明確核准全部分鏡圖後，才把 `episode.json.storyboardImagesApproved` 設為 `true`。
 
 ## 編修

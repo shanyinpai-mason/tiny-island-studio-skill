@@ -68,6 +68,9 @@ Schema：`schemas/storyboard.schema.json`
 已核准角色與 anchors：
 {{APPROVED_CHARACTERS_WITH_VISUAL_BIBLE_AND_ANCHORS}}
 
+已核准 continuity bible（完整 `continuity.json`；只可引用其中 ID）：
+{{APPROVED_CONTINUITY_JSON}}
+
 本集資料與故事：
 {{EPISODE_AND_STORY}}
 
@@ -77,11 +80,13 @@ Schema：`schemas/storyboard.schema.json`
 共同要求：
 - 產出 12–20 鏡，總長 90–180 秒，單鏡 2–15 秒。
 - 前 3 秒清楚呈現問題，依 Stop → Look → Think → Try → Fix Together 推進。
-- 每鏡只有一個主要動作，包含描述、秒數、聲音與簡體中文即夢提示詞 `jimengPrompt`。
-- 提示詞主體使用清楚、分層的簡體中文；角色 anchors、專有名詞與必要英文負面詞保留英文原文。
+- 每鏡只有一個主要動作，包含描述、秒數、`locationId`、`propIds`、聲音與簡體中文即夢提示詞 `jimengPrompt`。
+- `locationId` 必須是該鏡唯一主場景；`propIds` 必須列出畫面內所有 continuity-critical props。不得引用 continuity bible 以外的 ID。
+- `jimengPrompt` 是 Seedance 2 圖生影片提示詞，嚴格使用 `references/seedance-2.md` 的生產模板。主體使用清楚、分層的簡體中文；anchors、preservation phrases、專有名詞與必要英文負面詞保留英文原文。
 - 每條提示詞必須逐字包含所有出場角色的英文 anchors。
-- 每條提示詞必須包含 no text, no watermark, no extra limbs, no existing IP。
-- 維持固定角色顏色、比例、材質、鏡頭、光線與場景；避免危險模仿、頻閃與快速剪接。
+- 每條提示詞只有一個主鏡頭指令，主體動作與鏡頭動作分開，duration 必須等於該鏡秒數。
+- 每條提示詞必須包含 `preserve composition and colors`、`keep identity consistent`、`keep location and prop geometry consistent`、`avoid jitter`、`avoid temporal flicker`、`avoid identity drift`、`avoid chaotic composition`、`no text`、`no watermark`、`no extra limbs`、`no existing IP`；有人物時再包含 `avoid bent limbs`。
+- 維持固定角色顏色、比例、材質、光線、場景幾何、固定物位置、道具形狀與數量；避免危險模仿、頻閃與快速剪接。
 
 依 `{{NARRATION_MODE}}` 套用模式規則：
 
@@ -106,16 +111,18 @@ Schema：`schemas/storyboard.schema.json`
 Use case: illustration-story
 Asset type: children's animation storyboard still
 Primary request: {{SHOT_DESCRIPTION_AS_ONE_CLEAR_FROZEN_MOMENT}}
-Input images: {{APPROVED_CHARACTER_LOCATION_AND_PROP_REFERENCES}}
-Scene/backdrop: {{SCENE}}
+Input images (attach every listed file): {{APPROVED_CHARACTER_LOCATION_AND_PROP_REFERENCE_PATHS}}
+Continuity bindings: locationId={{LOCATION_ID}}; propIds={{PROP_IDS}}
+Scene/backdrop invariants (verbatim): {{LOCATION_ANCHORS}}
+Prop invariants (verbatim): {{PROP_ANCHORS}}
 Subject: {{CHARACTERS_WITH_COMPLETE_VISUAL_BIBLE_AND_ANCHORS}}
 Style/medium: {{STYLE_BIBLE}}
 Composition/framing: {{CAMERA_AND_COMPOSITION}}
 Lighting/mood: {{LIGHTING_AND_EMOTION}}
-Constraints: one still frame; preserve every approved character invariant; preschool-safe; no text; no captions; no watermark; no extra limbs; no existing IP
+Constraints: one still frame; preserve every approved character invariant; preserve exact layout, geometry, colors, materials and object count from the approved references; do not redesign, replace, add or remove scene fixtures or props; preschool-safe; no text; no captions; no watermark; no extra limbs; no existing IP
 ```
 
-生成結果放到 `outputs/<series-id>/<episode-folder>/images/storyboard/shot-NN-v001.png`。逐鏡使用已核准角色圖作 reference，不要用一張 contact sheet 代替所有鏡頭。
+生成結果放到 `outputs/<series-id>/<episode-folder>/images/storyboard/shot-NN-v001.png`。逐鏡實際附上出場角色圖與 `locationId`／`propIds` 綁定的全部核准 reference；不要只把路徑寫進提示詞，也不要用未核准的臨時圖取代。
 
 ## Character
 

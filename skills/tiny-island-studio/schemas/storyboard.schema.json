@@ -13,7 +13,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["no", "duration", "description", "sound"],
+        "required": ["no", "duration", "description", "locationId", "propIds", "sound"],
         "oneOf": [
           { "required": ["jimengPrompt"], "not": { "required": ["seedancePrompt"] } },
           { "required": ["seedancePrompt"], "not": { "required": ["jimengPrompt"] } }
@@ -22,6 +22,12 @@
           "no": { "type": "integer", "minimum": 1 },
           "duration": { "type": "integer", "minimum": 2, "maximum": 15 },
           "description": { "type": "string", "minLength": 1 },
+          "locationId": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "propIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+          },
           "jimengPrompt": { "type": "string", "minLength": 1 },
           "seedancePrompt": { "type": "string", "minLength": 1 },
           "sound": { "type": "string" }

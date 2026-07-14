@@ -1,4 +1,4 @@
 interface:
   display_name: "Tiny Island Studio"
-  short_description: "直接生成靜態圖，管理簡體中文即夢提示詞、安全審核與製作關卡"
-  default_prompt: "Use $tiny-island-studio to continue my children's animation production and prepare the next approved asset or Simplified-Chinese Jimeng prompt."
+  short_description: "用核准的角色、場景與道具 reference 製作一致分鏡與即夢 Seedance 2 提示詞"
+  default_prompt: "Use $tiny-island-studio to continue my children's animation production with validated character, location, and prop continuity before preparing Seedance 2 prompts."

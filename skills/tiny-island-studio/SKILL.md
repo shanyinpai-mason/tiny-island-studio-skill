@@ -1,6 +1,6 @@
 ---
 name: tiny-island-studio
-description: Manage multi-series AI children's animation production with GPT Image 2 stills, approved references, Simplified-Chinese Jimeng prompts, manual video takes, safety gates, dashboards, and git. Use for creating or continuing a series or episode, character sheets, storyboards, 「繼續做動畫」「做 EP05」「開新系列」「設計角色」「核准角色」「改某一鏡」「生成分鏡圖」, safety review, or production status.
+description: Manage multi-series AI children's animation production with GPT Image 2 stills, approved character/location/prop continuity references, Simplified-Chinese Jimeng Seedance 2 image-to-video prompts, manual video takes, safety gates, dashboards, and git. Use for creating or continuing a series or episode, character sheets, storyboards, visual continuity fixes, Seedance prompts, 「繼續做動畫」「做 EP05」「開新系列」「設計角色」「核准角色」「改某一鏡」「生成分鏡圖」「場景不一致」「道具不一致」「即夢提示詞」, safety review, or production status.
 ---
 
 # Tiny Island Studio
@@ -62,7 +62,7 @@ Use these stages in order:
 |---|---|---|
 | `idea` | Fill `hook`, `learning`, and `emotion` in `episode.json` | All three are non-empty |
 | `script` | Generate or edit `story.md` | Non-empty logline, 6–8 beats, and mode-appropriate non-empty narration or audio/action script |
-| `storyboard` | Generate `storyboard.json`, saved prompts, and storyboard stills when required | Schema-valid 12–20 shots, 2–15 seconds each, 90–180 seconds total; prompts synchronized; when `requireStoryboardStills` is not `false`, every storyboard still is generated and user-approved |
+| `storyboard` | Build and approve continuity references, then generate `storyboard.json`, saved prompts, and storyboard stills when required | Schema-valid continuity and 12–20 shots, 2–15 seconds each, 90–180 seconds total; prompts synchronized; when `requireStoryboardStills` is not `false`, every storyboard still is generated and user-approved |
 | `generate` | Let the user generate each animation take in Jimeng and ingest the files | Every shot has at least one `take-NN.mp4`; user confirms completion; set `generateConfirmed: true` |
 | `edit` | Present and record the edit checklist in `review.md` | Every edit checkbox is checked |
 | `review` | Present safety findings and record human decisions | Every review checkbox and every risk warning is confirmed |
@@ -93,12 +93,14 @@ Read the corresponding template in [references/prompts.md](references/prompts.md
 
 ## Generate the storyboard
 
-1. Read the approved `story.md`, style bible, and approved character cards; resolve `narrationMode` with the same episode → series → `spoken` rule.
-2. Generate and validate one JSON object against `schemas/storyboard.schema.json`. In `nonverbal`, follow the reference's visual storytelling and per-shot sound rules; in `spoken`, preserve the existing behavior.
-3. Write a Simplified-Chinese `jimengPrompt` for each shot. Keep English character anchors and required negative phrases verbatim. In `nonverbal`, do not request narration or complete spoken sentences. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
-4. Keep each shot's `jimengPrompt` or legacy `seedancePrompt` byte-for-byte equal to `prompts/shot-NN.txt` after trimming surrounding whitespace.
-5. Save one static-image prompt per shot under `image-prompts/storyboard/`. When `series.json.requireStoryboardStills` is not `false`, directly generate the stills and save them under the matching `outputs/` path. Never paste static-image prompts into chat unless the user asks.
-6. Run the validator, then commit with `<EP>: storyboard 完成` or `<EP>: 重新生成分鏡`.
+1. Read the approved `story.md`, style bible, approved character cards, [references/continuity.md](references/continuity.md), [references/seedance-2.md](references/seedance-2.md), and the applicable schemas completely; resolve `narrationMode` with the same episode → series → `spoken` rule.
+2. Inventory every main location and continuity-critical prop from the complete story. Create `continuity.json`, generate one location／prop reference at a time, show each result, and set `approved: true` only after explicit human approval. Do not generate a storyboard still yet.
+3. Generate and validate one JSON object against `schemas/storyboard.schema.json`. Every shot must bind exactly one `locationId` and a `propIds` array from `continuity.json`. In `nonverbal`, follow the reference's visual storytelling and per-shot sound rules; in `spoken`, preserve the existing behavior.
+4. Before the first storyboard still, run `node <skill-dir>/scripts/validate.mjs <episode-directory> --continuity`. Do not proceed unless it exits 0.
+5. Write a Simplified-Chinese Seedance 2 image-to-video `jimengPrompt` for each shot using `references/seedance-2.md`. Keep English identity anchors, preservation phrases, durations, and required negative phrases verbatim. In `nonverbal`, do not request narration or complete spoken sentences. Keep legacy `seedancePrompt` readable, but never emit both fields in one shot.
+6. Keep each shot's `jimengPrompt` or legacy `seedancePrompt` byte-for-byte equal to `prompts/shot-NN.txt` after trimming surrounding whitespace.
+7. Save one static-image prompt per shot under `image-prompts/storyboard/`. Include and actually attach the approved character, `locationId`, and `propIds` references bound to that shot, with their anchors verbatim. When `series.json.requireStoryboardStills` is not `false`, directly generate the stills and save them under the matching `outputs/` path. Never paste static-image prompts into chat unless the user asks.
+8. Run the validator, then commit with `<EP>: continuity 核准`, `<EP>: storyboard 完成`, or `<EP>: 重新生成分鏡`.
 
 Before regenerating any episode file, run `git status --short -- <episode-directory>`. If that episode has uncommitted changes, first commit them with `<EP>: 保存手動編修`. Do not ask for another confirmation before regeneration after this safeguard. Afterward, say that the previous version remains available in git.
 
@@ -108,16 +110,16 @@ Read [references/image-workflow.md](references/image-workflow.md) for every stat
 
 1. Save the final prompt to the prescribed `image-prompts/` path before generation.
 2. Invoke the built-in `$imagegen` / `image_gen` capability immediately; do not show the prompt or request a separate generation confirmation.
-3. Use one image-generation call per asset. Use approved character images as references whenever characters appear.
+3. Use one image-generation call per asset. Use approved character images as references whenever characters appear. For storyboard stills, also attach the exact approved location and prop references bound by `locationId` and `propIds`; do not rely on text-only descriptions.
 4. Move or copy the selected result into the prescribed workspace `outputs/` path and inspect it there.
 5. Show the generated image, not its prompt, for human approval. Apply revisions non-destructively with the next version number.
 6. If built-in image generation is unavailable, stop and report that limitation. Do not silently switch to an API-key CLI workflow or another image model.
 
 ## Generate animation takes manually
 
-1. Write each Jimeng prompt in Simplified Chinese with English character anchors and negative phrases left verbatim.
+1. Read [references/seedance-2.md](references/seedance-2.md). Write each Jimeng prompt as a Seedance 2 image-to-video instruction in Simplified Chinese, with English identity anchors, preservation phrases, duration, and negative phrases left verbatim.
    Use Simplified Chinese as a practical default because Jimeng's first-party interface and prompt documentation use it; do not claim that Traditional Chinese is unsupported or inherently worse.
-2. Do not generate video inside Codex. Tell the user which `prompts/shot-NN.txt` to paste into Jimeng and which approved storyboard or keyframe image to attach.
+2. Do not generate video inside Codex. Tell the user which `prompts/shot-NN.txt` to paste into Jimeng and which approved storyboard or keyframe image to attach. The storyboard image carries the approved character/location/prop continuity and is the required visual input.
 3. Ask the user to place each returned video at `outputs/<series-id>/<episode-folder>/shots/shot-NN/take-NN.mp4`.
 4. Detect files already placed there, list missing shots, and never overwrite a take. After the user selects a take, record its relative path in the episode notes.
 

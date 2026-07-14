@@ -99,7 +99,7 @@ ${script}`
 }
 
 function prompt(extra = '') {
-  return `温柔儿童动画，Lumi 轻轻观察，blue crescent badge，round amber boots，固定柔光。${extra} no text, no watermark, no extra limbs, no existing IP`
+  return `主体：Lumi，blue crescent badge，round amber boots。\n动作：Lumi 轻轻观察一次，${extra}\n环境：窗帘轻微摆动；光线保持固定柔光。\n镜头：camera locked-off，slow, smooth, stable。\n风格：温柔儿童动画；preserve composition and colors; keep identity consistent; keep location and prop geometry consistent。\n时长：8 seconds；画幅：16:9。\n约束：avoid jitter, avoid temporal flicker, avoid identity drift, avoid chaotic composition, avoid bent limbs；no text, no watermark, no extra limbs, no existing IP。`
 }
 
 function storyboard(extraPrompt = '', sound = '柔和環境音') {
@@ -107,6 +107,8 @@ function storyboard(extraPrompt = '', sound = '柔和環境音') {
     no: index + 1,
     duration: 8,
     description: `Lumi 完成第 ${index + 1} 個安全動作。`,
+    locationId: 'play-room',
+    propIds: [],
     jimengPrompt: prompt(index === 0 ? extraPrompt : ''),
     sound,
   }))
@@ -140,12 +142,26 @@ anchors: ${JSON.stringify(options.anchors || ['blue crescent badge', 'round ambe
   await write(join(episodeDir, 'episode.json'), JSON.stringify(episodeData(options.episode || {}), null, 2), options.bom === true)
   await write(join(episodeDir, 'story.md'), options.storyContent ?? storyMarkdown(options.storyExtra || ''))
   if (options.withStoryboard !== false) {
+    const continuity = {
+      locations: [{
+        id: 'play-room',
+        name: '遊戲室',
+        anchors: ['one mint arch window centered on the back wall', 'two coral floor cushions beside a round cream rug'],
+        promptFile: 'series/test-series/image-prompts/locations/play-room-v001.txt',
+        referenceImage: 'outputs/test-series/shared/images/locations/play-room-v001.png',
+        approved: true,
+      }],
+      props: [],
+    }
+    await write(join(episodeDir, 'continuity.json'), JSON.stringify(continuity, null, 2))
+    await write(join(workspace, continuity.locations[0].promptFile), 'approved location prompt')
+    await write(join(workspace, continuity.locations[0].referenceImage), 'approved location image')
     await write(join(episodeDir, 'storyboard.json'), JSON.stringify(board, null, 2))
     for (const shot of board.shots) {
       const stem = `shot-${String(shot.no).padStart(2, '0')}`
       await write(join(episodeDir, 'prompts', `${stem}.txt`), shot.jimengPrompt)
       if (options.createStills === true) {
-        await write(join(episodeDir, 'image-prompts', 'storyboard', `${stem}-v001.txt`), 'saved static image prompt')
+        await write(join(episodeDir, 'image-prompts', 'storyboard', `${stem}-v001.txt`), `Input images: ${continuity.locations[0].referenceImage}\nScene anchors: ${continuity.locations[0].anchors.join('; ')}\nConstraints: preserve exact layout, geometry, colors, materials and object count from the approved references`)
         await write(join(workspace, 'outputs', 'test-series', basename(episodeDir), 'images', 'storyboard', `${stem}-v001.png`), 'fake png fixture')
       }
     }
@@ -157,6 +173,20 @@ try {
   const clean = await createWorkspace('clean')
   let result = runNode(validateScript, [clean.episodeDir, '--gate', 'storyboard'])
   assert(result.code === 0, '完整分鏡 fixture 通過，且 requireStoryboardStills=false 可略過靜態圖', result.output)
+
+  const continuityMissing = await createWorkspace('continuity-missing')
+  await rm(join(continuityMissing.workspace, 'outputs', 'test-series', 'shared', 'images', 'locations', 'play-room-v001.png'))
+  result = runNode(validateScript, [continuityMissing.episodeDir, '--continuity'])
+  assert(result.code !== 0 && result.output.includes('reference image 必須存在且非空'), 'continuity 預檢會阻擋缺少的場景 reference', result.output)
+
+  const multiCamera = await createWorkspace('multi-camera')
+  const multiCameraPath = join(multiCamera.episodeDir, 'storyboard.json')
+  const multiCameraBoard = JSON.parse(await readFile(multiCameraPath, 'utf8'))
+  multiCameraBoard.shots[0].jimengPrompt = multiCameraBoard.shots[0].jimengPrompt.replace('camera locked-off', 'camera push-in then orbit')
+  await write(multiCameraPath, JSON.stringify(multiCameraBoard, null, 2))
+  await write(join(multiCamera.episodeDir, 'prompts', 'shot-01.txt'), multiCameraBoard.shots[0].jimengPrompt)
+  result = runNode(validateScript, [multiCamera.episodeDir, '--gate', 'storyboard'])
+  assert(result.code !== 0 && result.output.includes('只能有一個主鏡頭指令'), 'Seedance 2 提示詞會阻擋多個主鏡頭指令', result.output)
 
   const danger = await createWorkspace('danger', { extraPrompt: riskPrompts.simplifiedDanger })
   result = runNode(validateScript, [danger.episodeDir, '--gate', 'storyboard'])
@@ -179,6 +209,13 @@ try {
   await mkdir(unrelatedCwd, { recursive: true })
   result = runNode(validateScript, [strictStills.episodeDir, '--gate', 'storyboard'], { cwd: unrelatedCwd })
   assert(result.code === 0, '從任意 cwd 驗證絕對 episode 路徑時可找到正確 workspace', result.output)
+
+  const missingStaticAnchor = await createWorkspace('missing-static-anchor', { requireStoryboardStills: true, createStills: true, episode: { storyboardImagesApproved: true } })
+  const shotOneStatic = join(missingStaticAnchor.episodeDir, 'image-prompts', 'storyboard', 'shot-01-v001.txt')
+  const brokenStatic = (await readFile(shotOneStatic, 'utf8')).replace('one mint arch window centered on the back wall', 'generic window')
+  await write(shotOneStatic, brokenStatic)
+  result = runNode(validateScript, [missingStaticAnchor.episodeDir, '--gate', 'storyboard'])
+  assert(result.code !== 0 && result.output.includes('play-room anchor'), 'storyboard gate 會阻擋靜態提示詞遺漏場景 anchor', result.output)
 
   const invalidAnchors = await createWorkspace('invalid-anchors', { anchors: ['Lumi'] })
   result = runNode(validateScript, [invalidAnchors.episodeDir, '--gate', 'storyboard'])

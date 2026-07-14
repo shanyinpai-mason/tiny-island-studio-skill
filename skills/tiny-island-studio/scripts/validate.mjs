@@ -24,21 +24,44 @@ const REVIEW_ITEMS = [
   '內容適合最低年齡 3 歲觀看',
 ]
 const REQUIRED_NEGATIVES = ['no text', 'no watermark', 'no extra limbs', 'no existing ip']
+const REQUIRED_JIMENG_PHRASES = [
+  'preserve composition and colors',
+  'keep identity consistent',
+  'keep location and prop geometry consistent',
+  'avoid jitter',
+  'avoid temporal flicker',
+  'avoid identity drift',
+  'avoid chaotic composition',
+  'avoid bent limbs',
+]
 const REQUIRED_EPISODE_FIELDS = ['code', 'title', 'subtitle', 'stage', 'format', 'publishDate', 'hook', 'learning', 'emotion']
 const REQUIRED_STORYBOARD_FIELDS = ['totalDuration', 'directorNote', 'shots']
-const REQUIRED_SHOT_FIELDS = ['no', 'duration', 'description', 'sound']
+const REQUIRED_SHOT_FIELDS = ['no', 'duration', 'description', 'locationId', 'propIds', 'sound']
 const ALLOWED_STORYBOARD_FIELDS = new Set(REQUIRED_STORYBOARD_FIELDS)
 const ALLOWED_SHOT_FIELDS = new Set([...REQUIRED_SHOT_FIELDS, 'jimengPrompt', 'seedancePrompt'])
+const ALLOWED_CONTINUITY_FIELDS = new Set(['locations', 'props'])
+const ALLOWED_CONTINUITY_ASSET_FIELDS = new Set(['id', 'name', 'anchors', 'promptFile', 'referenceImage', 'approved'])
+const CAMERA_MOTIONS = [
+  ['push-in', /\b(?:push[ -]?in|dolly in)\b|推镜|推进/i],
+  ['pull-out', /\b(?:pull[ -]?out|dolly out)\b|拉镜|拉远/i],
+  ['pan/lateral', /\b(?:pan|lateral)\b|横移|摇镜/i],
+  ['tracking/follow', /\b(?:tracking|follow)\b|跟拍|跟随镜头/i],
+  ['orbit/arc', /\b(?:orbit|arc)\b|环绕/i],
+  ['aerial', /\b(?:aerial|drone)\b|航拍|鸟瞰/i],
+  ['handheld', /\bhandheld\b|手持/i],
+  ['fixed', /\b(?:fixed|locked[ -]?off)\b|固定镜头|镜头固定/i],
+]
 
 const scriptFile = fileURLToPath(import.meta.url)
 const skillDir = resolve(dirname(scriptFile), '..')
 const args = process.argv.slice(2)
 const statusMode = args.includes('--status')
+const continuityMode = args.includes('--continuity')
 const verbose = args.includes('--verbose')
 const gateIndex = args.indexOf('--gate')
 const requestedGate = gateIndex >= 0 ? args[gateIndex + 1] : null
 const positional = args.filter((arg, index) =>
-  arg !== '--status' && arg !== '--verbose' && arg !== '--gate' && !(gateIndex >= 0 && index === gateIndex + 1),
+  arg !== '--status' && arg !== '--continuity' && arg !== '--verbose' && arg !== '--gate' && !(gateIndex >= 0 && index === gateIndex + 1),
 )
 
 const results = []
@@ -124,6 +147,24 @@ async function hasNonEmptyVersionedFile(directory, pattern) {
     if ((await stat(join(directory, file))).size > 0) return true
   }
   return false
+}
+
+async function latestNonEmptyVersionedFile(directory, pattern) {
+  if (!existsSync(directory)) return null
+  const files = (await readdir(directory)).filter(file => pattern.test(file)).sort().reverse()
+  for (const file of files) {
+    const path = join(directory, file)
+    if ((await stat(path)).size > 0) return path
+  }
+  return null
+}
+
+function workspacePath(workspaceRoot, relativePath) {
+  if (!isNonEmptyString(relativePath)) return null
+  const absolute = resolve(workspaceRoot, relativePath)
+  const relative = absolute.slice(workspaceRoot.length)
+  if (absolute !== workspaceRoot && !relative.startsWith('\\') && !relative.startsWith('/')) return null
+  return absolute
 }
 
 function parseFrontmatter(markdown) {
@@ -246,6 +287,79 @@ async function loadCharacters(seriesDir) {
   return characters
 }
 
+async function loadContinuity({ episodeDir, workspaceRoot, blocking }) {
+  let valid = true
+  const check = (ok, message) => {
+    if (blocking) report(ok, message)
+    else if (!ok) warning(`非目前關卡：${message}`)
+    valid &&= ok
+  }
+  const path = join(episodeDir, 'continuity.json')
+  check(existsSync(path), '缺少 continuity.json')
+  if (!existsSync(path)) return { valid: false, locations: new Map(), props: new Map() }
+  const continuity = await readJson(path, 'continuity.json')
+  if (!continuity) return { valid: false, locations: new Map(), props: new Map() }
+
+  const extraRootFields = Object.keys(continuity).filter(field => !ALLOWED_CONTINUITY_FIELDS.has(field))
+  check(extraRootFields.length === 0, extraRootFields.length ? `continuity.json 有未允許欄位：${extraRootFields.join(', ')}` : 'continuity.json 欄位正確')
+  const locations = Array.isArray(continuity.locations) ? continuity.locations : []
+  const props = Array.isArray(continuity.props) ? continuity.props : []
+  check(Array.isArray(continuity.locations) && locations.length > 0, 'continuity locations 必須是非空陣列')
+  check(Array.isArray(continuity.props), 'continuity props 必須是陣列')
+
+  const ids = new Set()
+  const maps = { locations: new Map(), props: new Map() }
+  for (const [kind, assets] of [['locations', locations], ['props', props]]) {
+    for (let index = 0; index < assets.length; index += 1) {
+      const asset = assets[index]
+      const label = `${kind}[${index}]`
+      const objectOk = asset && typeof asset === 'object' && !Array.isArray(asset)
+      check(objectOk, `${label} 必須是物件`)
+      if (!objectOk) continue
+      const extraFields = Object.keys(asset).filter(field => !ALLOWED_CONTINUITY_ASSET_FIELDS.has(field))
+      check(extraFields.length === 0, extraFields.length ? `${label} 有未允許欄位：${extraFields.join(', ')}` : `${label} 欄位正確`)
+      const idOk = typeof asset.id === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(asset.id) && !ids.has(asset.id)
+      check(idOk, `${label} id 必須是唯一 kebab-case：${asset.id ?? '(缺少)'}`)
+      const anchorsOk = Array.isArray(asset.anchors) && asset.anchors.length >= 2 && asset.anchors.every(isNonEmptyString)
+      check(anchorsOk, `${label} 至少需要兩個非空 anchors`)
+      check(isNonEmptyString(asset.name) && isNonEmptyString(asset.promptFile) && isNonEmptyString(asset.referenceImage) && typeof asset.approved === 'boolean', `${label} name、路徑與 approved 格式正確`)
+      if (idOk) {
+        ids.add(asset.id)
+        maps[kind].set(asset.id, asset)
+      }
+      check(asset.approved === true, `${label} ${asset.name || asset.id || ''} 必須由使用者核准`)
+      for (const [field, description] of [['promptFile', 'reference prompt'], ['referenceImage', 'reference image']]) {
+        const absolute = workspacePath(workspaceRoot, asset[field])
+        check(absolute !== null, `${label} ${field} 必須是 workspace 內相對路徑`)
+        const exists = absolute !== null && existsSync(absolute) && (await stat(absolute)).size > 0
+        check(exists, `${label} ${description} 必須存在且非空：${asset[field] || '(缺少)'}`)
+      }
+    }
+  }
+  return { valid, ...maps }
+}
+
+function validateJimengPrompt(shot, check) {
+  if (!isNonEmptyString(shot?.jimengPrompt)) return true
+  const label = `鏡頭 ${String(shot.no).padStart(2, '0')}`
+  const prompt = shot.jimengPrompt
+  const lower = prompt.toLowerCase()
+  let valid = true
+  const verify = (ok, message) => {
+    check(ok, message)
+    valid &&= ok
+  }
+  verify(/动作\s*[:：]/.test(prompt) && /镜头\s*[:：]/.test(prompt), `${label} Seedance 2 必須分開標示主体动作與镜头`)
+  for (const phrase of REQUIRED_JIMENG_PHRASES) verify(lower.includes(phrase), `${label} Seedance 2 缺少「${phrase}」`)
+  verify(lower.includes(`${shot.duration} seconds`), `${label} Seedance 2 時長必須是 ${shot.duration} seconds`)
+  const motions = CAMERA_MOTIONS.filter(([, pattern]) => pattern.test(prompt)).map(([name]) => name)
+  verify(motions.length === 1, motions.length === 1
+    ? `${label} Seedance 2 主鏡頭是 ${motions[0]}`
+    : `${label} Seedance 2 必須且只能有一個主鏡頭指令；目前：${motions.join(', ') || '未辨識'}`)
+  verify(!/(^|[^a-z])fast([^a-z]|$)/i.test(prompt), `${label} Seedance 2 不可使用未限定的 fast`)
+  return valid
+}
+
 function findRisks(storyMarkdown, storyboard, risks, allowlist) {
   const findings = []
   const seen = new Set()
@@ -324,7 +438,7 @@ function validateAnchors(character, output) {
   return valid
 }
 
-async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode, blocking }) {
+async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode, continuity, blocking }) {
   let valid = Boolean(storyboard)
   const check = (ok, message) => {
     if (blocking) report(ok, message)
@@ -358,6 +472,9 @@ async function validateStoryboard({ storyboard, episodeDir, episodeOutputDir, se
     check(Number.isInteger(shot.no) && shot.no === index + 1, `${label} no 必須連號`)
     check(Number.isInteger(shot.duration) && shot.duration >= 2 && shot.duration <= 15, `${label} duration 必須是 2–15 秒整數`)
     check(isNonEmptyString(shot.description) && isNonEmptyString(videoPrompt(shot)) && typeof shot.sound === 'string', `${label} 文字欄位格式正確`)
+    check(isNonEmptyString(shot.locationId) && continuity.locations.has(shot.locationId), `${label} locationId 必須綁定已定義場景：${shot.locationId ?? '(缺少)'}`)
+    check(Array.isArray(shot.propIds) && new Set(shot.propIds).size === shot.propIds.length && shot.propIds.every(id => continuity.props.has(id)), `${label} propIds 必須是不重複且全部已定義的陣列`)
+    validateJimengPrompt(shot, check)
     if (narrationMode === 'nonverbal') check(isNonEmptyString(shot.sound), `${label} nonverbal sound 必須描述短聲、擬聲、環境音、音樂提示或刻意靜默`)
     if (Number.isInteger(shot.duration)) calculatedDuration += shot.duration
   }
@@ -433,7 +550,10 @@ async function validateEpisode(inputDir) {
     report(parsedStory.narrationMode === narrationMode.value, `story.md narrationMode 為 ${parsedStory.narrationMode}，應為 ${narrationMode.value}`)
   }
   const storyboard = existsSync(storyboardPath) ? await readJson(storyboardPath, 'storyboard.json') : null
-  const storyboardValid = await validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode: narrationMode.value, blocking: storyboardBlocking })
+  const continuity = (storyboard || continuityMode)
+    ? await loadContinuity({ episodeDir, workspaceRoot, blocking: storyboardBlocking || continuityMode })
+    : { valid: !storyboardBlocking, locations: new Map(), props: new Map() }
+  const storyboardValid = await validateStoryboard({ storyboard, episodeDir, episodeOutputDir, seriesDir, narrationMode: narrationMode.value, continuity, blocking: storyboardBlocking || continuityMode })
 
   const risks = findRisks(storyMarkdown, storyboard, await loadRiskTerms(), await loadSafetyAllowlist(seriesDir))
   const unresolvedRisks = risks.filter(finding => !riskConfirmed(finding, reviewMarkdown))
@@ -442,6 +562,12 @@ async function validateEpisode(inputDir) {
     warning(`${finding.location} / ${finding.field} / 風險詞「${finding.term}」：${finding.reason}${confirmed ? '（已人工確認）' : ''}`)
   }
   if (!risks.length) note('沒有偵測到風險詞')
+
+  if (continuityMode) {
+    console.log('\nContinuity 預檢\n')
+    report(Boolean(storyboard), 'storyboard.json 已建立，可檢查逐鏡 continuity 綁定')
+    report(continuity.valid && storyboardValid, '所有 location／prop references 已核准、檔案存在且逐鏡綁定有效')
+  }
 
   if (effectiveGate) {
     console.log(`\n關卡驗證：${effectiveGate}\n`)
@@ -460,17 +586,33 @@ async function validateEpisode(inputDir) {
       }
     }
     if (effectiveGate === 'storyboard') {
-      report(storyboardValid, '分鏡結構、提示詞與角色一致性通過')
+      report(storyboardValid && continuity.valid, '分鏡結構、continuity 綁定、提示詞與角色一致性通過')
       const shots = Array.isArray(storyboard?.shots) ? storyboard.shots : []
       const requireStills = series?.requireStoryboardStills !== false
       const imagePromptDir = join(episodeDir, 'image-prompts', 'storyboard')
       const storyboardImageDir = join(episodeOutputDir, 'images', 'storyboard')
       for (const shot of shots) {
         const stem = `shot-${String(shot.no).padStart(2, '0')}`
-        const promptExists = await hasNonEmptyVersionedFile(imagePromptDir, new RegExp(`^${stem}-v\\d{3}\\.txt$`, 'i'))
+        const imagePromptPath = await latestNonEmptyVersionedFile(imagePromptDir, new RegExp(`^${stem}-v\\d{3}\\.txt$`, 'i'))
+        const promptExists = imagePromptPath !== null
         const imageExists = await hasNonEmptyVersionedFile(storyboardImageDir, new RegExp(`^${stem}-v\\d{3}\\.(?:png|jpe?g|webp)$`, 'i'))
         if (requireStills) {
           report(promptExists, `${stem} 有版本化靜態圖提示詞`)
+          if (imagePromptPath) {
+            const imagePrompt = await readUtf8(imagePromptPath)
+            const boundAssets = [
+              continuity.locations.get(shot.locationId),
+              ...(Array.isArray(shot.propIds) ? shot.propIds.map(id => continuity.props.get(id)) : []),
+            ].filter(Boolean)
+            for (const asset of boundAssets) {
+              report(imagePrompt.includes(asset.referenceImage), `${stem} 靜態圖提示詞缺少 reference image「${asset.referenceImage}」`)
+              for (const anchor of asset.anchors) report(imagePrompt.toLowerCase().includes(anchor.toLowerCase()), `${stem} 靜態圖提示詞缺少 ${asset.id} anchor「${anchor}」`)
+            }
+            report(
+              imagePrompt.toLowerCase().includes('preserve exact layout, geometry, colors, materials and object count from the approved references'),
+              `${stem} 靜態圖提示詞缺少 continuity preservation 約束`,
+            )
+          }
           report(imageExists, `${stem} 有 storyboard 靜態圖`)
         } else if (!promptExists || !imageExists) {
           note(`${stem} 未完成 storyboard still（系列設定為非必要）`)
@@ -579,6 +721,6 @@ function finish() {
 if (statusMode) await generateStatus(positional[0])
 else if (positional[0]) await validateEpisode(positional[0])
 else {
-  console.error('用法：node validate.mjs <episodeDir> [--gate <stage>] [--verbose]\n      node validate.mjs --status [seriesDir]')
+  console.error('用法：node validate.mjs <episodeDir> [--continuity] [--gate <stage>] [--verbose]\n      node validate.mjs --status [seriesDir]')
   process.exitCode = 2
 }
